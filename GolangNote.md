@@ -38,3 +38,14 @@ slice := source[2:3:4]
 长度: j – i 或3 - 2 = 1
 容量: k – i 或4 - 2 = 2
 ```
+***
+## 映射(map)
+#### 对nil 映射赋值时的语言运行时错误
+```
+// 通过声明映射创建一个nil 映射
+var colors map[string]string
+// 将Red 的代码加入到映射
+colors["Red"] = "#da1337"
+Runtime Error:
+panic: runtime error: assignment to entry in nil map
+```
