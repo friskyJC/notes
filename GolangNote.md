@@ -95,3 +95,147 @@ import "runtime"
 runtime.GOMAXPROCS(runtime.NumCPU())
 ```
 > 调度器对可以创建的逻辑处理器的数量没有限制，但语言运行时默认限制每个程序最多创建10 000 个线程。这个限制值可以通过调用runtime/debug 包的SetMaxThreads 方法来更改。如果程序试图使用更多的线程，就会崩溃。
+#### 用竞争检测器来编译并执行代码
+```
+go build -race // 用竞争检测器标志来编译程序
+./example // 运行程序
+==================
+WARNING: DATA RACE
+Write by goroutine 5:
+main.incCounter()
+/example/main.go:49 +0x96
+Previous read by goroutine 6:
+main.incCounter()
+/example/main.go:40 +0x66
+Goroutine 5 (running) created at:
+main.main()
+/example/main.go:25 +0x5c
+Goroutine 6 (running) created at:
+main.main()
+/example/main.go:26 +0x73
+==================
+Final Counter: 2
+Found 1 data race(s)
+```
+#### 锁住共享资源
+1. 原子函数
+> atmoic 包的AddInt64 函数
+
+> 另外两个有用的原子函数是LoadInt64 和StoreInt64
+```
+01 // 这个示例程序展示如何使用atomic 包来提供
+02 // 对数值类型的安全访问
+03 package main
+04
+05 import (
+06 "fmt"
+07 "runtime"
+08 "sync"
+09 "sync/atomic"
+10 )
+11
+12 var (
+13 // counter 是所有goroutine 都要增加其值的变量
+14 counter int64
+15
+16 // wg 用来等待程序结束
+17 wg sync.WaitGroup
+18 )
+19
+20 // main 是所有Go 程序的入口
+21 func main() {
+22 // 计数加 2，表示要等待两个goroutine
+23 wg.Add(2)
+24
+25 // 创建两个goroutine
+26 go incCounter(1)
+27 go incCounter(2)
+28
+29 // 等待 goroutine 结束
+30 wg.Wait()
+31
+32 // 显示最终的值
+33 fmt.Println("Final Counter:", counter)
+34 }
+35
+36 // incCounter 增加包里counter 变量的值
+37 func incCounter(id int) {
+38 // 在函数退出时调用Done 来通知main 函数工作已经完成
+39 defer wg.Done()
+40
+41 for count := 0; count < 2; count++ {
+42 // 安全地对counter 加1
+43 atomic.AddInt64(&counter, 1)
+44
+45 // 当前 goroutine 从线程退出，并放回到队列
+46 runtime.Gosched()
+47 }
+48 }
+```
+2. 互斥锁(mutex)
+```
+01 // 这个示例程序展示如何使用互斥锁来
+02 // 定义一段需要同步访问的代码临界区
+03 // 资源的同步访问
+04 package main
+05
+06 import (
+07 "fmt"
+08 "runtime"
+09 "sync"
+10 )
+11
+12 var (
+13 // counter 是所有goroutine 都要增加其值的变量
+14 counter int
+15
+16 // wg 用来等待程序结束
+17 wg sync.WaitGroup
+18
+19 // mutex 用来定义一段代码临界区
+20 mutex sync.Mutex
+21 )
+22
+23 // main 是所有Go 程序的入口
+24 func main() {
+25 // 计数加 2，表示要等待两个goroutine
+26 wg.Add(2)
+27
+28 // 创建两个goroutine
+29 go incCounter(1)
+30 go incCounter(2)
+31
+32 // 等待 goroutine 结束
+33 wg.Wait()
+34 fmt.Printf("Final Counter: %d\\n", counter)
+35 }
+36
+37 // incCounter 使用互斥锁来同步并保证安全访问，
+38 // 增加包里counter 变量的值
+39 func incCounter(id int) {
+40 // 在函数退出时调用Done 来通知main 函数工作已经完成
+41 defer wg.Done()
+42
+43 for count := 0; count < 2; count++ {
+44 // 同一时刻只允许一个goroutine 进入
+45 // 这个临界区
+46 mutex.Lock()
+47 {
+48 // 捕获 counter 的值
+49 value := counter
+50
+51 // 当前 goroutine 从线程退出，并放回到队列
+52 runtime.Gosched()
+53
+54 // 增加本地 value 变量的值
+55 value++
+56
+57 // 将该值保存回counter
+58 counter = value
+59 }
+60 mutex.Unlock()
+61 // 释放锁，允许其他正在等待的goroutine
+62 // 进入临界区
+63 }
+64 }
+```
